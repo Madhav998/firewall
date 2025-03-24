@@ -6,15 +6,20 @@ from scapy.all import IP, TCP, Raw
 from netfilterqueue import NetfilterQueue
 
 #  Logging Setup
-LOG_FILE = "/var/log/firewall.log" 
+import logging
+
+LOG_FILE = "/var/log/firewall.log"  # This is the correct path
+
 logging.basicConfig(
-    level=logging.INFO, 
+    level=logging.INFO,
     format="%(asctime)s - %(levelname)s - %(message)s",
     handlers=[
-        logging.FileHandler(LOG_FILE), 
-        logging.StreamHandler()  
+        logging.FileHandler(LOG_FILE),  # Log to the file
+        logging.StreamHandler()  # Log to console
     ]
 )
+
+logging.info("Firewall script started!")
 
 logging.info("Firewall script started!") 
 

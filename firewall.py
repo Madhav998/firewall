@@ -32,10 +32,14 @@ def load_blocklist(file_path):
         logging.error(f"[ERROR] Blocklist file not found: {file_path}")
         return []
 
-BLOCKED_IPS = load_blocklist("blocked_ips.txt")
-BLOCKED_PORTS = [int(port) for port in load_blocklist("blocked_ports.txt") if port.isdigit()]
-BLOCKED_KEYWORDS = load_blocklist("blocked_keywords.txt")
-BLOCKED_SITES = load_blocklist("blocked_sites.txt")
+# Remote Blocklist URLs
+BLOCKLIST_URLS = {
+    'blocked_ips.txt': 'https://raw.githubusercontent.com/stamparm/ipsum/master/ipsum.txt',  # List of malicious IPs
+    'blocked_ports.txt': 'https://gist.githubusercontent.com/anonymous/1eab6d48/raw/blocked_ports.txt',  # Custom blocked ports
+    'blocked_keywords.txt': 'https://gist.githubusercontent.com/anonymous/1eab6d48/raw/blocked_keywords.txt',  # Keywords like "proxy", "hack", "torrent"
+    'blocked_sites.txt': 'https://raw.githubusercontent.com/stamparm/blackbook/master/blackbook.txt'  # Malicious domains
+}
+
 
 # Configure iptables Rules
 def setup_iptables():

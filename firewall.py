@@ -146,7 +146,7 @@ def update_blocklists():
     urls = {
         "blocked_ips.txt": "https://raw.githubusercontent.com/stamparm/ipsum/master/ipsum.txt",  # Example IP blocklist
         "blocked_ports.txt": "https://raw.githubusercontent.com/kevoreilly/portlist/master/portlist.txt",  # Example port list
-        "blocked_keywords.txt": "https://raw.githubusercontent.com/yourusername/yourrepo/master/blocked_keywords.txt",  # Replace with your actual URL
+        "blocked_keywords.txt": "https://github.com/Madhav998/firewall/blob/main/blocked_keywords.txt",  # Replace with your actual URL
         "blocked_sites.txt": "https://raw.githubusercontent.com/yourusername/yourrepo/master/blocked_sites.txt"  # Replace with your actual URL
     }
 

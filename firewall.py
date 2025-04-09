@@ -8,6 +8,12 @@ from netfilterqueue import NetfilterQueue
 # ====================== Logging Setup ========================
 LOG_FILE = "/var/log/firewall.log"
 
+# Ensure log file exists with correct permissions
+if not os.path.exists(LOG_FILE):
+    with open(LOG_FILE, "w") as f:
+        f.write("")
+    os.chmod(LOG_FILE, 0o644)  # rw-r--r--
+
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s - %(levelname)s - %(message)s",

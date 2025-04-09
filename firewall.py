@@ -182,4 +182,3 @@ def start_firewall():
 # ====================== Main =========================
 if __name__ == "__main__":
     start_firewall()
- do i have to make changes now?

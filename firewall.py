@@ -157,8 +157,8 @@ def start_firewall():
     global BLOCKED_IPS, BLOCKED_PORTS, BLOCKED_KEYWORDS, BLOCKED_SITES
 
     install_requirements()
-
-    BLOCKED_IPS = [ip for ip in load_blocklist("blocked_ips.txt") if not ip.startswith("10.0.2.")]
+    
+    BLOCKED_IPS = [ip.split()[0] for ip in load_blocklist("blocked_ips.txt") if not ip.startswith("10.0.2.")]
     BLOCKED_PORTS = [int(p) for p in load_blocklist("blocked_ports.txt") if p.isdigit()]
     BLOCKED_KEYWORDS = load_blocklist("blocked_keywords.txt")
     BLOCKED_SITES = load_blocklist("blocked_sites.txt")

@@ -145,7 +145,7 @@ def update_blocklists():
     logger.info("[INFO] Updating blocklists...")
     urls = {
         "blocked_ips.txt": "https://raw.githubusercontent.com/bitwire-it/ipblocklist/refs/heads/main/ip-list.txt",  # Example IP blocklist
-        "blocked_ports.txt": "https://raw.githubusercontent.com/kevoreilly/portlist/master/portlist.txt",  # Example port list
+        "blocked_ports.txt": "https://github.com/Madhav998/firewall/blob/main/port%20list",  # Example port list
         "blocked_keywords.txt": "https://github.com/Madhav998/firewall/blob/main/blocked_keywords.txt",  # Replace with your actual URL
         "blocked_sites.txt": "https://github.com/Madhav998/firewall/blob/main/blocked_sites.txt"  # Replace with your actual URL
     }

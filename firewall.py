@@ -5,183 +5,175 @@ import logging
 from scapy.all import IP, TCP, Raw
 from netfilterqueue import NetfilterQueue
 
-#  Logging Setup
-import logging
-
-LOG_FILE = "/var/log/firewall.log"  # This is the correct path
+# ====================== Logging Setup ========================
+LOG_FILE = "/var/log/firewall.log"
 
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s - %(levelname)s - %(message)s",
     handlers=[
-        logging.FileHandler(LOG_FILE),  # Log to the file
-        logging.StreamHandler()  # Log to console
+        logging.FileHandler(LOG_FILE),
+        logging.StreamHandler()
     ]
 )
+logging.info("Firewall script initialized!")
 
-logging.info("Firewall script started!")
+# ====================== Root Check ===========================
+if os.geteuid() != 0:
+    logging.error("This script must be run as root. Exiting...")
+    exit(1)
 
-logging.info("Firewall script started!") 
-
-# Load Blocklists
+# ====================== Blocklist Loader =====================
 def load_blocklist(file_path):
     try:
         with open(file_path, "r") as f:
             return [line.strip() for line in f if line.strip()]
     except FileNotFoundError:
-        logging.error(f"[ERROR] Blocklist file not found: {file_path}")
+        logging.warning(f"[WARNING] Blocklist not found: {file_path}")
         return []
 
-# Remote Blocklist URLs
+# ====================== Blocklist URLs =======================
 BLOCKLIST_URLS = {
-    'blocked_ips.txt': 'https://raw.githubusercontent.com/stamparm/ipsum/master/ipsum.txt',  # List of malicious IPs
-    'blocked_ports.txt': 'https://gist.githubusercontent.com/anonymous/1eab6d48/raw/blocked_ports.txt',  # Custom blocked ports
-    'blocked_keywords.txt': 'https://gist.githubusercontent.com/anonymous/1eab6d48/raw/blocked_keywords.txt',  # Keywords like "proxy", "hack", "torrent"
-    'blocked_sites.txt': 'https://raw.githubusercontent.com/stamparm/blackbook/master/blackbook.txt'  # Malicious domains
+    'blocked_ips.txt': 'https://raw.githubusercontent.com/stamparm/ipsum/master/ipsum.txt',
+    'blocked_ports.txt': 'https://gist.githubusercontent.com/anonymous/1eab6d48/raw/blocked_ports.txt',
+    'blocked_keywords.txt': 'https://gist.githubusercontent.com/anonymous/1eab6d48/raw/blocked_keywords.txt',
+    'blocked_sites.txt': 'https://raw.githubusercontent.com/stamparm/blackbook/master/blackbook.txt'
 }
 
+# ====================== Dependencies Check ====================
+def install_requirements():
+    try:
+        subprocess.run("apt-get update && apt-get install iptables-persistent netfilter-persistent fail2ban squid python3-pip -y", shell=True, check=True)
+        subprocess.run("pip3 install scapy netfilterqueue", shell=True, check=True)
+        logging.info("[INFO] Dependencies installed.")
+    except Exception as e:
+        logging.error(f"[ERROR] Dependency installation failed: {e}")
 
-# Configure iptables Rules
+# ====================== IPTables Setup ========================
 def setup_iptables():
     commands = [
-        "sudo iptables -P INPUT DROP",
-        "sudo iptables -P FORWARD DROP",
-        "sudo iptables -P OUTPUT ACCEPT",
-
-        # Allow SSH
-        "sudo iptables -A INPUT -p tcp --dport 22 -j ACCEPT",
-
-        # Allow established connections
-        "sudo iptables -A INPUT -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT",
-
-        # Prevent SYN flood attacks
-        "sudo iptables -A INPUT -p tcp --syn -m limit --limit 1/s --limit-burst 3 -j ACCEPT",
-
-        # Forward HTTP & HTTPS to NFQUEUE for inspection
-        "sudo iptables -A INPUT -p tcp --dport 80 -j NFQUEUE --queue-num 1",
-        "sudo iptables -A INPUT -p tcp --dport 443 -j NFQUEUE --queue-num 1",
-        
-        # Block specific IPs
-        *[f"sudo iptables -A INPUT -s {ip} -j DROP" for ip in BLOCKED_IPS],
-
-        # Block specific Ports
-        *[f"sudo iptables -A INPUT -p tcp --dport {port} -j DROP" for port in BLOCKED_PORTS]
+        "iptables -F",
+        "iptables -P INPUT DROP",
+        "iptables -P FORWARD DROP",
+        "iptables -P OUTPUT ACCEPT",
+        "iptables -A INPUT -p tcp --dport 22 -j ACCEPT",
+        "iptables -A INPUT -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT",
+        "iptables -A INPUT -p tcp --syn -m limit --limit 1/s --limit-burst 3 -j ACCEPT",
+        "iptables -A INPUT -s 10.0.2.0/24 -j ACCEPT",
+        "iptables -A INPUT -p tcp --dport 80 -j NFQUEUE --queue-num 1",
+        "iptables -A INPUT -p tcp --dport 443 -j NFQUEUE --queue-num 1",
+        *[f"iptables -A INPUT -s {ip} -j DROP" for ip in BLOCKED_IPS if not ip.startswith("10.0.2.")],
+        *[f"iptables -A INPUT -p tcp --dport {port} -j DROP" for port in BLOCKED_PORTS]
     ]
 
     for cmd in commands:
         try:
             subprocess.run(cmd, shell=True, check=True)
         except subprocess.CalledProcessError as e:
-            logging.error(f"[ERROR] Failed to apply iptables rule: {cmd} - {e}")
+            logging.error(f"[ERROR] iptables rule failed: {cmd} - {e}")
 
-    # Ensure DROP policy remains active in case of failure
-    subprocess.run("sudo iptables -P INPUT DROP", shell=True, check=False)
-    subprocess.run("sudo iptables -P FORWARD DROP", shell=True, check=False)
-    subprocess.run("sudo iptables -P OUTPUT ACCEPT", shell=True, check=False)
+    subprocess.run("netfilter-persistent save", shell=True)
+    logging.info("[INFO] iptables rules finalized and saved.")
 
-    logging.info("[INFO] iptables rules finalized with safe default policies.")
-
-# Packet Inspection & Filtering
+# ====================== Packet Inspection =====================
 def inspect_packet(packet):
     try:
         scapy_pkt = IP(packet.get_payload())
 
-        # Drop packets from blocked IPs
         if scapy_pkt.src in BLOCKED_IPS or scapy_pkt.dst in BLOCKED_IPS:
             logging.warning(f"[BLOCKED] IP: {scapy_pkt.src} -> {scapy_pkt.dst}")
             packet.drop()
             return
 
-        # Drop packets on blocked ports
         if scapy_pkt.haslayer(TCP) and (scapy_pkt[TCP].sport in BLOCKED_PORTS or scapy_pkt[TCP].dport in BLOCKED_PORTS):
-            logging.warning(f"[BLOCKED] Suspicious Port: {scapy_pkt.src}:{scapy_pkt[TCP].sport} -> {scapy_pkt.dst}:{scapy_pkt[TCP].dport}")
+            logging.warning(f"[BLOCKED] Port: {scapy_pkt.src}:{scapy_pkt[TCP].sport} -> {scapy_pkt.dst}:{scapy_pkt[TCP].dport}")
             packet.drop()
             return
 
-        # Inspect HTTP traffic
         if scapy_pkt.haslayer(Raw):
             try:
                 http_payload = scapy_pkt[Raw].load.decode("utf-8", errors="replace")
                 for keyword in BLOCKED_KEYWORDS:
                     if keyword.lower() in http_payload.lower():
-                        logging.warning(f"[BLOCKED] Malicious Keyword Detected: {keyword}")
+                        logging.warning(f"[BLOCKED] Keyword Detected: {keyword}")
                         packet.drop()
                         return
             except UnicodeDecodeError:
-                logging.error("[ERROR] Unicode decoding failed on HTTP payload")
+                logging.error("[ERROR] Could not decode HTTP payload")
 
         packet.accept()
 
     except Exception as e:
-        logging.error(f"[ERROR] Failed to inspect packet: {e}")
+        logging.error(f"[ERROR] Packet inspection failed: {e}")
         packet.accept()
 
-# Setup Fail2Ban to Prevent Brute-Force Attacks
+# ====================== Fail2Ban Setup ========================
 def setup_fail2ban():
     try:
-        subprocess.run("sudo apt-get install fail2ban -y", shell=True, check=True)
-        subprocess.run("sudo systemctl enable fail2ban && sudo systemctl start fail2ban", shell=True, check=True)
-        logging.info("[INFO] Fail2Ban setup completed.")
+        subprocess.run("systemctl enable fail2ban && systemctl start fail2ban", shell=True, check=True)
+        logging.info("[INFO] Fail2Ban started.")
     except Exception as e:
-        logging.error(f"[ERROR] Failed to setup Fail2Ban: {e}")
+        logging.error(f"[ERROR] Fail2Ban setup failed: {e}")
 
-# Setup Squid Proxy with Domain-Based Filtering
+# ====================== Squid Proxy Setup =====================
 def setup_squid_proxy():
     try:
-        subprocess.run("sudo apt-get install squid -y", shell=True, check=True)
-
         blocked_domains_rules = "\n".join([f".{domain}" for domain in BLOCKED_SITES])
-
         squid_config = f"""
 http_port 3128
-acl allowed_ips src 192.168.1.0/24
+acl allowed_ips src 10.0.2.0/24
 acl blocked_sites dstdomain {blocked_domains_rules}
 http_access deny blocked_sites
 http_access allow allowed_ips
 http_access deny all
         """
-
         with open("/etc/squid/squid.conf", "w") as f:
             f.write(squid_config)
 
-        subprocess.run("sudo systemctl restart squid", shell=True, check=True)
-        logging.info("[INFO] Squid Proxy configured with domain-based filtering.")
+        subprocess.run("systemctl restart squid", shell=True, check=True)
+        logging.info("[INFO] Squid Proxy configured.")
     except Exception as e:
-        logging.error(f"[ERROR] Failed to setup Squid Proxy: {e}")
+        logging.error(f"[ERROR] Squid Proxy setup failed: {e}")
 
-# Automate Blocklist Updates
+# ====================== Blocklist Auto Update =================
 def update_blocklists():
     logging.info("[INFO] Updating blocklists...")
-    urls = {
-        "blocked_ips.txt": "https://example.com/blocked_ips.txt",
-        "blocked_ports.txt": "https://example.com/blocked_ports.txt",
-        "blocked_keywords.txt": "https://example.com/blocked_keywords.txt",
-        "blocked_sites.txt": "https://example.com/blocked_sites.txt"
-    }
-
-    for filename, url in urls.items():
+    for filename, url in BLOCKLIST_URLS.items():
         try:
-            temp_file = filename + ".tmp"
-            subprocess.run(f"wget -O {temp_file} {url}", shell=True, check=True)
-            os.replace(temp_file, filename)  # Replace only if successful
-            logging.info(f"[INFO] Updated {filename}.")
+            subprocess.run(f"wget -q -O {filename}.tmp {url}", shell=True, check=True)
+            os.replace(f"{filename}.tmp", filename)
+            logging.info(f"[INFO] {filename} updated.")
         except Exception as e:
-            logging.error(f"[ERROR] Failed to update {filename}: {e}")
+            logging.error(f"[ERROR] Updating {filename} failed: {e}")
 
-# Start the Firewall
+# ====================== Firewall Starter ======================
 def start_firewall():
+    global BLOCKED_IPS, BLOCKED_PORTS, BLOCKED_KEYWORDS, BLOCKED_SITES
+
+    install_requirements()
+
+    BLOCKED_IPS = [ip for ip in load_blocklist("blocked_ips.txt") if not ip.startswith("10.0.2.")]
+    BLOCKED_PORTS = [int(p) for p in load_blocklist("blocked_ports.txt") if p.isdigit()]
+    BLOCKED_KEYWORDS = load_blocklist("blocked_keywords.txt")
+    BLOCKED_SITES = load_blocklist("blocked_sites.txt")
+
     setup_iptables()
     setup_fail2ban()
     setup_squid_proxy()
-    update_blocklists()
+
+    threading.Thread(target=update_blocklists, daemon=True).start()
 
     nfqueue = NetfilterQueue()
-    nfqueue.bind(1, inspect_packet)
+    try:
+        nfqueue.bind(1, inspect_packet)
+        logging.info("[INFO] Firewall running. Press Ctrl+C to stop.")
+        nfqueue.run()
+    except KeyboardInterrupt:
+        logging.info("[INFO] Stopping firewall...")
+    finally:
+        nfqueue.unbind()
 
-    firewall_thread = threading.Thread(target=nfqueue.run, daemon=True)
-    firewall_thread.start()
-    logging.info("[INFO] Firewall started and running.")
-
-# Run Firewall
+# ====================== Main =========================
 if __name__ == "__main__":
     start_firewall()
+ do i have to make changes now?

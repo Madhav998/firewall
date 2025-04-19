@@ -123,7 +123,7 @@ def setup_squid_proxy():
             subprocess.run("sudo apt-get install squid -y", shell=True, check=True)
 
         # Make sure blocklist file exists
-        with open("/etc/squid/blocked_sites.txt", "w") as f:
+        with open("/etc/squid/blocked_sites.txt", "a") as f:
             f.write("\n".join([f".{domain}" for domain in BLOCKED_SITES]))
 
         squid_config = """

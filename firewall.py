@@ -122,6 +122,7 @@ def setup_squid_proxy():
         if subprocess.run("which squid", shell=True).returncode != 0:
             subprocess.run("sudo apt-get install squid -y", shell=True, check=True)
 
+        # Make sure blocklist file exists
         with open("/etc/squid/blocked_sites.txt", "w") as f:
             f.write("\n".join([f".{domain}" for domain in BLOCKED_SITES]))
 
@@ -133,11 +134,26 @@ http_access deny blocked_sites
 http_access allow allowed_ips
 http_access deny all
 """
-        with open("/etc/squid/squid.conf", "w") as f:
-            f.write(squid_config)
+
+        config_path = "/etc/squid/squid.conf"
+        # Check if config already exists to avoid overwriting unnecessarily
+        if os.path.exists(config_path):
+            with open(config_path, "r") as existing:
+                existing_content = existing.read()
+            if squid_config.strip() == existing_content.strip():
+                logger.info("[i] Squid config already up to date.")
+            else:
+                with open(config_path, "w") as f:
+                    f.write(squid_config)
+                logger.info("[+] Squid config updated.")
+        else:
+            with open(config_path, "w") as f:
+                f.write(squid_config)
+            logger.info("[+] Squid config written for first time.")
 
         subprocess.run("sudo systemctl restart squid", shell=True, check=True)
-        logger.info("[INFO] Squid Proxy configured.")
+        logger.info("[INFO] Squid Proxy configured and restarted.")
+
     except Exception as e:
         logger.error(f"[ERROR] Squid Proxy setup failed: {e}")
 

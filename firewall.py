@@ -4,11 +4,12 @@ import threading
 import logging
 import signal
 import sys
+import ipaddress
 from scapy.all import IP, TCP, Raw
 from netfilterqueue import NetfilterQueue
 
 # 🔹 Logging Setup
-LOG_FILE = "/var/log/hybrid_firewall.log"
+LOG_FILE = "/var/log/firewall.log"
 
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
